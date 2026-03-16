@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Login - Tabla Excel</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const LockIcon = () => (
+            <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+        );
+
+        const LogOutIcon = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+        );
+
+        const SaveIcon = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+        );
+
+        const ExcelLoginApp = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [currentUser, setCurrentUser] = useState('');
+            const [error, setError] = useState('');
+            const [tableData, setTableData] = useState([]);
+            const [saveStatus, setSaveStatus] = useState('');
+            const [showDateForm, setShowDateForm] = useState(false);
+            const [startDate, setStartDate] = useState('');
+            const [dateError, setDateError] = useState('');
+            const [weekDates, setWeekDates] = useState([]);
+
+            const users = {
+                'admin': 'admin123',
+                'usuario1': 'pass123',
+                'demo': 'demo'
+            };
+
+            // Configuración de filas con opciones desplegables
+            const dropdownRows = {
+                4: ['Ordinal', 'Choque', 'Recuperación'], // Fila 5: Micros
+                5: ['1', '2', '3', '4', '5', '6'], // Fila 6: Frecuencia
+                6: ['1', '2'], // Fila 7: Sesiones
+                7: ['Introducción', 'Básico Deseable', 'Básico Estabilizador', 'Especial Variador', 'Control', 'Pre-Competitivo', 'Competitivo', 'Transición'], // Fila 8: Tipo de entrenamiento
+                9: ['1', '2', '3', '4','5'], // Fila 10: Intensidad
+                11: ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100'] // Fila 12: % (porcentaje)
+            };
+
+            // Configuración de filas con selector de incrementos de 10
+            const incrementRows = {
+                8: { min: 10, max: 100, step: 10 } // Fila 9: Volumen (parte 1: 10, 20, 30...100)
+            };
+
+            // Configuración de filas que calculan suma
+            const sumRows = []; // Ya no se usa para Volumen
+
+            // Configuración de filas que calculan porcentaje
+            const percentageRows = [11]; // Fila 12: % (calcula porcentaje basado en total)
+
+            // Función para calcular suma de una fila
+            const calculateSum = (rowIndex) => {
+                if (!tableData || !tableData[rowIndex]) return 0;
+                let sum = 0;
+                for (let col = 1; col < tableData[rowIndex].length; col++) {
+                    const value = parseFloat(tableData[rowIndex][col]) || 0;
+                    sum += value;
+                }
+                return sum;
+            };
+
+            // Función para calcular porcentajes
+            const calculatePercentage = (rowIndex, colIndex) => {
+                const total = calculateSum(rowIndex);
+                if (total === 0) return '0%';
+                const value = parseFloat(tableData[rowIndex][colIndex]) || 0;
+                const percentage = ((value / total) * 100).toFixed(1);
+                return `${percentage}%`;
+            };
+            
+            useEffect(() => {
+                if (isLoggedIn && currentUser) {
+                    setShowDateForm(true);
+                }
+            }, [isLoggedIn, currentUser]);
+
+            // Función para calcular semanas entre dos fechas
+            const calculateWeeks = (start) => {
+                const startD = new Date(start);
+                
+                // Calcular fecha de fin: 5 meses después (aproximadamente 150 días)
+                const endD = new Date(startD);
+                endD.setMonth(endD.getMonth() + 5);
+                
+                const weeks = [];
+                
+                // Ajustar al lunes más cercano o igual
+                const dayOfWeek = startD.getDay();
+                const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                startD.setDate(startD.getDate() + diff);
+                
+                let currentMonday = new Date(startD);
+                
+                // Generar semanas hasta que se alcance o supere la fecha de fin
+                while (currentMonday <= endD) {
+                    const saturday = new Date(currentMonday);
+                    saturday.setDate(saturday.getDate() + 5); // Lunes a Sábado
+                    
+                    weeks.push({
+                        start: new Date(currentMonday),
+                        end: new Date(saturday)
+                    });
+                    
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    
+                    // Prevenir bucle infinito
+                    if (weeks.length > 30) break;
+                }
+                
+                return weeks;
+            };
+
+            const handleDateSubmit = () => {
+                if (!startDate) {
+                    setDateError('La fecha de inicio es obligatoria');
+                    return;
+                }
+                
+                const weeks = calculateWeeks(startDate);
+                setWeekDates(weeks);
+                setDateError('');
+                setShowDateForm(false);
+                loadUserData(weeks);
+            };
+
+            useEffect(() => {
+                if (isLoggedIn && currentUser && !showDateForm && weekDates.length === 0) {
+                    setShowDateForm(true);
+                }
+            }, [isLoggedIn, currentUser]);
+
+            const loadUserData = (weeks = []) => {
+                // Mantener los datos predeterminados
+                const numWeeks = weeks.length || 23;
+                const totalCols = numWeeks + 1; // +1 para columna A
+                const newData = Array(26).fill(null).map(() => Array(totalCols).fill(''));
+                
+                // Fila 1: Periodo
+                newData[0][0] = 'Periodo';
+                
+                if (weeks.length > 0) {
+                    const totalWeeks = weeks.length;
+                    
+                    // Distribución fija:
+                    // - Preparatorio: 70% de las semanas totales
+                    // - Competitivo: 3 semanas
+                    // - Competencia planificada: 1 semana (libre)
+                    // - Transición: 2 semanas
+                    
+                    const prepWeeks = Math.floor(totalWeeks * 0.70); // 70% (15-16 semanas)
+                    const compWeeks = 3; // 3 semanas fijas
+                    const compPlanificada = 1; // 1 semana libre
+                    const transWeeks = 2; // 2 semanas fijas
+                    
+                    // Verificar que la suma sea correcta, si no ajustar preparatorio
+                    const sumaParcial = compWeeks + compPlanificada + transWeeks;
+                    const prepAjustado = totalWeeks - sumaParcial;
+                    
+                    // Llenar headers de periodo
+                    // Preparatorio
+                    for (let i = 1; i <= prepAjustado; i++) {
+                        newData[0][i] = i === 1 ? 'Preparatorio' : '';
+                    }
+                    // Competitivo (3 semanas)
+                    for (let i = prepAjustado + 1; i <= prepAjustado + compWeeks; i++) {
+                        newData[0][i] = i === prepAjustado + 1 ? 'Competitivo' : '';
+                    }
+                    // Competencia Planificada (1 semana libre)
+                    const competenciaIdx = prepAjustado + compWeeks + 1;
+                    newData[0][competenciaIdx] = 'Competencia';
+                    
+                    // Transición (2 semanas)
+                    for (let i = competenciaIdx + 1; i <= totalWeeks; i++) {
+                        newData[0][i] = i === competenciaIdx + 1 ? 'Transición' : '';
+                    }
+                }
+                
+                // Fila 2: Etapa
+                newData[1][0] = 'Etapa';
+                if (weeks.length > 0) {
+                    const totalWeeks = weeks.length;
+                    
+                    // Calcular preparatorio ajustado
+                    const prepTotal = Math.floor(totalWeeks * 0.70);
+                    const sumaParcial = 3 + 1 + 2; // comp + competencia + trans
+                    const prepAjustado = totalWeeks - sumaParcial;
+                    
+                    // Pre. General: 40% del preparatorio
+                    // Pre. Especial: 60% del preparatorio
+                    const prepGenWeeks = Math.floor(prepAjustado * 0.40);
+                    const prepEspWeeks = prepAjustado - prepGenWeeks;
+                    
+                    // Pre. General
+                    for (let i = 1; i <= prepGenWeeks; i++) {
+                        newData[1][i] = i === 1 ? 'Pre. General' : '';
+                    }
+                    // Pre. Especial
+                    for (let i = prepGenWeeks + 1; i <= prepAjustado; i++) {
+                        newData[1][i] = i === prepGenWeeks + 1 ? 'Pre. Especial' : '';
+                    }
+                    // Competitivo (3 semanas)
+                    for (let i = prepAjustado + 1; i <= prepAjustado + 3; i++) {
+                        newData[1][i] = i === prepAjustado + 1 ? 'Competitivo' : '';
+                    }
+                    // Competencia Planificada (1 semana)
+                    const competenciaIdx = prepAjustado + 3 + 1;
+                    newData[1][competenciaIdx] = 'Competencia';
+                    
+                    // Transitorio (2 semanas)
+                    for (let i = competenciaIdx + 1; i <= totalWeeks; i++) {
+                        newData[1][i] = i === competenciaIdx + 1 ? 'Transitorio' : '';
+                    }
+                }
+                
+                // Fila 3: Números de semana
+                newData[2][0] = 'Semanas';
+                for (let i = 1; i <= numWeeks; i++) {
+                    newData[2][i] = String(i);
+                }
+                
+                // Fila 4: Fechas (lunes a sábado)
+                newData[3][0] = 'Fechas';
+                if (weeks.length > 0) {
+                    weeks.forEach((week, idx) => {
+                        const startStr = `${week.start.getDate()}/${week.start.getMonth() + 1}`;
+                        const endStr = `${week.end.getDate()}/${week.end.getMonth() + 1}`;
+                        newData[3][idx + 1] = `${startStr}|${endStr}`;
+                    });
+                }
+                
+                // Fila 11: Meses (combinar semanas del mismo mes)
+                newData[10][0] = 'Meses';
+                if (weeks.length > 0) {
+                    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                    
+                    let currentMonth = -1;
+                    weeks.forEach((week, idx) => {
+                        const weekMonth = week.start.getMonth();
+                        if (weekMonth !== currentMonth) {
+                            newData[10][idx + 1] = monthNames[weekMonth];
+                            currentMonth = weekMonth;
+                        } else {
+                            newData[10][idx + 1] = '';
+                        }
+                    });
+                }
+                
+                // Información predeterminada en la columna A (índice 0)
+                const columnAData = [
+                    'Periodo', 'Etapa', 'Semanas', 'Fechas', 'Micros', 
+                    'Frecuencia', 'Sesiones', 'Tipo de entrenamiento', 'Volumen', 
+                    'Intensidad', 'Meses', '%', 'Minutos', 'R. Anaerobica',
+                    'Rapidez', 'F. Rapida', 'F. Explosiva', 'R. Fuerza', 'R. Rapidez',
+                    'Flexibilidad', 'Coordinacion', 'Tecnico', 'T. Tactico', 'T. Psicologico',
+                    'P. Teorico', 'C. Fundamental'
+                ];
+                
+                for (let i = 0; i < columnAData.length; i++) {
+                    newData[i][0] = columnAData[i];
+                }
+                
+                setTableData(newData);
+            };
+
+            const handleLogin = (e) => {
+                if (e) e.preventDefault();
+                if (users[username] && users[username] === password) {
+                    setIsLoggedIn(true);
+                    setCurrentUser(username);
+                    setError('');
+                } else {
+                    setError('Usuario o contraseña incorrectos');
+                }
+            };
+
+            const handleLogout = () => {
+                setIsLoggedIn(false);
+                setCurrentUser('');
+                setUsername('');
+                setPassword('');
+                setShowDateForm(false);
+                setStartDate('');
+                setWeekDates([]);
+                setTableData(Array(26).fill(null).map(() => Array(24).fill('')));
+            };
+
+            const handleCellChange = (row, col, value) => {
+                const newData = [...tableData];
+                newData[row][col] = value;
+                
+                // Si se cambia el Volumen - Parte 1 (porcentaje selector en fila 8)
+                if (row === 8 && col > 0) {
+                    const partes = value.split('|');
+                    const porcentajeSeleccionado = parseFloat(partes[0]) || 0;
+                    
+                    if (porcentajeSeleccionado > 0) {
+                        // Calcular minutos basados en el porcentaje seleccionado
+                        const minutos = Math.round((720 * porcentajeSeleccionado) / 100);
+                        // Actualizar la parte 2 del volumen (minutos calculados)
+                        newData[8][col] = `${partes[0] || ''}|${minutos}`;
+                    }
+                }
+                
+                // Si se cambia el % (fila 11), actualizar la fila de Minutos (fila 12)
+                if (row === 11 && col > 0) {
+                    const porcentaje = parseFloat(value) || 0;
+                    if (porcentaje > 0) {
+                        // Fórmula: porcentaje / 100
+                        const minutosCalculados = porcentaje / 100;
+                        newData[12][col] = minutosCalculados.toFixed(2);
+                    }
+                }
+                
+                setTableData(newData);
+            };
+
+            const handleSave = () => {
+                // Generar PDF de la tabla
+                const element = document.getElementById('tabla-excel');
+                const opt = {
+                    margin: 10,
+                    filename: `planificacion_${currentUser}_${new Date().toLocaleDateString()}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a3', orientation: 'landscape' }
+                };
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    setSaveStatus('PDF generado y descargado correctamente');
+                    setTimeout(() => setSaveStatus(''), 3000);
+                }).catch(() => {
+                    setSaveStatus('Error al generar PDF');
+                    setTimeout(() => setSaveStatus(''), 3000);
+                });
+            };
+
+            const getColumnLetter = (index) => {
+                if (index < 26) {
+                    return String.fromCharCode(65 + index);
+                } else {
+                    // Para columnas después de Z (AA, AB, AC, etc.)
+                    const firstLetter = String.fromCharCode(65 + Math.floor(index / 26) - 1);
+                    const secondLetter = String.fromCharCode(65 + (index % 26));
+                    return firstLetter + secondLetter;
+                }
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                            <div className="flex items-center justify-center mb-6">
+                                <LockIcon />
+                            </div>
+                            <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
+                                Iniciar Sesión
+                            </h1>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Usuario
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleLogin(e)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        placeholder="Ingresa tu usuario"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Contraseña
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleLogin(e)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        placeholder="Ingresa tu contraseña"
+                                    />
+                                </div>
+
+                                {error && (
+                                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                                        {error}
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={handleLogin}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200"
+                                >
+                                    Ingresar
+                                </button>
+                            </div>
+
+                            <div className="mt-6 p-4 bg-gray-100 rounded-lg">
+                                <p className="text-sm text-gray-600 font-semibold mb-2">Usuarios de prueba:</p>
+                                <p className="text-xs text-gray-500">admin / admin123</p>
+                                <p className="text-xs text-gray-500">usuario1 / pass123</p>
+                                <p className="text-xs text-gray-500">demo / demo</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (showDateForm) {
+                return (
+                    <div className="min-h-screen bg-gray-100">
+                        <nav className="bg-white shadow-md px-6 py-4">
+                            <div className="flex justify-between items-center">
+                                <h1 className="text-2xl font-bold text-gray-800">
+                                    Planificación - {currentUser}
+                                </h1>
+                                <button
+                                    onClick={handleLogout}
+                                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition"
+                                >
+                                    <LogOutIcon />
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </nav>
+
+                        <div className="flex items-center justify-center p-8">
+                            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl">
+                                <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">
+                                    Configuración de Fechas
+                                </h2>
+                                
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Fecha de Inicio de la Planificación
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                    </div>
+
+                                    {dateError && (
+                                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                                            {dateError}
+                                        </div>
+                                    )}
+
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <p className="text-sm text-blue-800">
+                                            <strong>Automático:</strong> El sistema generará automáticamente 5 meses (aproximadamente 21-22 semanas) a partir de la fecha de inicio.
+                                        </p>
+                                        <p className="text-sm text-blue-600 mt-2">
+                                            Las semanas se calcularán de lunes a sábado.
+                                        </p>
+                                        <p className="text-xs text-blue-500 mt-1">
+                                            Ejemplo: Si ingresas 1 Enero 2025, se generará hasta finales de Mayo 2025.
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        onClick={handleDateSubmit}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200"
+                                    >
+                                        Generar Planificación de 5 Meses
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <nav className="bg-white shadow-md px-6 py-4">
+                        <div className="flex justify-between items-center">
+                            <h1 className="text-2xl font-bold text-gray-800">
+                                Tabla Excel - {currentUser}
+                            </h1>
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={handleSave}
+                                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition"
+                                >
+                                    <SaveIcon />
+                                    Descargar PDF
+                                </button>
+                                <button
+                                    onClick={handleLogout}
+                                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition"
+                                >
+                                    <LogOutIcon />
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </div>
+                        {saveStatus && (
+                            <div className="mt-2 bg-green-100 text-green-700 px-4 py-2 rounded">
+                                {saveStatus}
+                            </div>
+                        )}
+                    </nav>
+
+                    <div className="p-6">
+                        <div id="tabla-excel" className="bg-white rounded-lg shadow-lg" style={{width: '2400px', overflowX: 'auto'}}>
+                            <table className="border-collapse" style={{width: '100%', minWidth: '2400px'}}>
+                                <thead>
+                                    <tr className="bg-gray-200">
+                                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold" style={{width: '50px', minWidth: '50px'}}>
+                                            #
+                                        </th>
+                                        <th className="border border-gray-300 px-4 py-2 text-center font-semibold" style={{width: '200px', minWidth: '200px'}}>
+                                            A
+                                        </th>
+                                        {tableData[0] && tableData[0].slice(1).map((_, i) => {
+                                            let width = '90px';
+                                            
+                                            return (
+                                                <th key={i} className="border border-gray-300 px-2 py-2 text-center font-semibold" style={{width: width, minWidth: width}}>
+                                                    {getColumnLetter(i + 1)}
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {tableData.map((row, rowIndex) => (
+                                        <tr key={rowIndex} className="hover:bg-gray-50">
+                                            <td className="border border-gray-300 px-2 py-2 text-center font-semibold bg-gray-100" style={{width: '50px', minWidth: '50px'}}>
+                                                {rowIndex + 1}
+                                            </td>
+                                            {row.map((cell, colIndex) => {
+                                                // FILA 1 - Ocultar celdas combinadas (Periodo)
+                                                if (rowIndex === 0 && colIndex > 0) {
+                                                    // Solo mostrar cuando empieza un nuevo periodo
+                                                    if (cell === '' || (cell !== 'Preparatorio' && cell !== 'Competitivo' && cell !== 'Transición' && cell !== 'Competencia')) {
+                                                        return null;
+                                                    }
+                                                }
+                                                
+                                                // FILA 2 - Ocultar celdas combinadas (Etapa)
+                                                if (rowIndex === 1 && colIndex > 0) {
+                                                    // Solo mostrar cuando empieza una nueva etapa
+                                                    if (cell === '' || (cell !== 'Pre. General' && cell !== 'Pre. Especial' && cell !== 'Competitivo' && cell !== 'Transitorio' && cell !== 'Competencia')) {
+                                                        return null;
+                                                    }
+                                                }
+
+                                                // FILA 8 (Tipo de entrenamiento) - Combinar celdas consecutivas con mismo valor
+                                                if (rowIndex === 7 && colIndex > 0) {
+                                                    // Si la celda anterior tiene el mismo valor, ocultarla
+                                                    if (colIndex > 1 && cell && cell === row[colIndex - 1]) {
+                                                        return null;
+                                                    }
+                                                }
+
+                                                // FILA 11 (Meses) - Ocultar celdas combinadas
+                                                if (rowIndex === 10 && colIndex > 0) {
+                                                    if (cell === '') {
+                                                        return null;
+                                                    }
+                                                }
+                                                
+                                                let colSpan = 1;
+                                                let className = "border border-gray-300 p-0";
+                                                
+                                                // FILA 1 - Calcular colspan para Periodo
+                                                if (rowIndex === 0 && colIndex > 0) {
+                                                    let count = 1;
+                                                    for (let i = colIndex + 1; i < row.length; i++) {
+                                                        if (row[i] === '') count++;
+                                                        else break;
+                                                    }
+                                                    colSpan = count;
+                                                    if (cell === 'Preparatorio') className += " bg-blue-100 text-center font-semibold";
+                                                    else if (cell === 'Competitivo') className += " bg-green-100 text-center font-semibold";
+                                                    else if (cell === 'Competencia') className += " bg-red-100 text-center font-semibold";
+                                                    else if (cell === 'Transición') className += " bg-purple-100 text-center font-semibold";
+                                                }
+                                                
+                                                // FILA 2 - Calcular colspan para Etapa
+                                                if (rowIndex === 1 && colIndex > 0) {
+                                                    let count = 1;
+                                                    for (let i = colIndex + 1; i < row.length; i++) {
+                                                        if (row[i] === '') count++;
+                                                        else break;
+                                                    }
+                                                    colSpan = count;
+                                                    className += " bg-yellow-100 text-center font-semibold";
+                                                }
+
+                                                // FILA 8 (Tipo de entrenamiento) - Calcular colspan
+                                                if (rowIndex === 7 && colIndex > 0 && cell) {
+                                                    let count = 1;
+                                                    for (let i = colIndex + 1; i < row.length; i++) {
+                                                        if (row[i] === cell) count++;
+                                                        else break;
+                                                    }
+                                                    colSpan = count;
+                                                    className += " bg-indigo-100 text-center font-semibold";
+                                                }
+
+                                                // FILA 11 (Meses) - Calcular colspan
+                                                if (rowIndex === 10 && colIndex > 0) {
+                                                    let count = 1;
+                                                    for (let i = colIndex + 1; i < row.length; i++) {
+                                                        if (row[i] === '') count++;
+                                                        else break;
+                                                    }
+                                                    colSpan = count;
+                                                    className += " bg-purple-100 text-center font-semibold";
+                                                }
+                                                
+                                                // Columna A
+                                                if (colIndex === 0) {
+                                                    className += " bg-gray-200 text-center font-semibold";
+                                                }
+                                                
+                                                return (
+                                                    <td key={colIndex} colSpan={colSpan} className={className} style={colIndex === 0 ? {width: '200px', minWidth: '200px'} : {width: '90px', minWidth: '90px'}}>
+                                                        {/* Renderizar según el tipo de celda */}
+                                                        {colIndex === 0 ? (
+                                                            // Columna A: solo texto centrado
+                                                            <input
+                                                                type="text"
+                                                                value={cell}
+                                                                onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
+                                                                className="w-full px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50 bg-transparent font-semibold text-sm text-center"
+                                                            />
+                                                        ) : rowIndex === 3 && colIndex > 0 ? (
+                                                            // Fila 4 (Fechas): Mostrar lunes-sábado uno encima del otro
+                                                            <div className="flex flex-col text-center py-1 text-xs">
+                                                                <div className="font-semibold text-blue-700">
+                                                                    {cell.split('|')[0] || ''}
+                                                                </div>
+                                                                <div className="text-gray-500">al</div>
+                                                                <div className="font-semibold text-blue-700">
+                                                                    {cell.split('|')[1] || ''}
+                                                                </div>
+                                                            </div>
+                                                        ) : rowIndex === 8 ? (
+                                                            // Fila 9 (Volumen): Selector + Input uno encima del otro
+                                                            <div className="flex flex-col gap-1 py-1">
+                                                                <select
+                                                                    value={cell.split('|')[0] || ''}
+                                                                    onChange={(e) => {
+                                                                        const secondPart = cell.split('|')[1] || '';
+                                                                        handleCellChange(rowIndex, colIndex, e.target.value + '|' + secondPart);
+                                                                    }}
+                                                                    className="w-full px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-transparent cursor-pointer text-xs"
+                                                                >
+                                                                    <option value="">-</option>
+                                                                    {Array.from({length: 10}, (_, i) => (i + 1) * 10).map(num => (
+                                                                        <option key={num} value={num}>{num}%</option>
+                                                                    ))}
+                                                                </select>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="999"
+                                                                    value={cell.split('|')[1] || ''}
+                                                                    onChange={(e) => {
+                                                                        const firstPart = cell.split('|')[0] || '';
+                                                                        const value = e.target.value.slice(0, 3);
+                                                                        handleCellChange(rowIndex, colIndex, firstPart + '|' + value);
+                                                                    }}
+                                                                    placeholder="min"
+                                                                    className="w-full px-2 py-1 focus:outline-none focus:ring-1 focus:ring-green-500 bg-transparent text-xs text-center"
+                                                                />
+                                                            </div>
+                                                        ) : rowIndex === 12 && colIndex > 0 ? (
+                                                            // Fila 13 (Minutos): Calculados automáticamente desde % (porcentaje/100)
+                                                            <div className="w-full px-3 py-2 bg-amber-50 text-center font-semibold text-sm">
+                                                                {cell || '0'}
+                                                            </div>
+                                                        ) : dropdownRows[rowIndex] ? (
+                                                            // Filas con opciones desplegables
+                                                            <select
+                                                                value={cell}
+                                                                onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
+                                                                className="w-full px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50 bg-transparent cursor-pointer text-sm"
+                                                            >
+                                                                <option value="">Seleccionar...</option>
+                                                                {dropdownRows[rowIndex].map((option, idx) => (
+                                                                    <option key={idx} value={option}>
+                                                                        {rowIndex === 11 ? `${option}%` : option}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        ) : sumRows.includes(rowIndex) && colIndex > 0 ? (
+                                                            // Filas de suma: mostrar suma total al final
+                                                            colIndex === tableData[rowIndex].length - 1 ? (
+                                                                <div className="w-full px-3 py-2 font-bold bg-yellow-50 text-center">
+                                                                    Total: {calculateSum(rowIndex)}
+                                                                </div>
+                                                            ) : (
+                                                                <input
+                                                                    type="number"
+                                                                    value={cell}
+                                                                    onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
+                                                                    className="w-full px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50 bg-transparent"
+                                                                />
+                                                            )
+                                                        ) : percentageRows.includes(rowIndex) && colIndex > 0 ? (
+                                                            // Filas de porcentaje: calcular automáticamente
+                                                            <div className="w-full px-3 py-2 bg-green-50 text-center font-semibold">
+                                                                {cell ? calculatePercentage(rowIndex, colIndex) : '0%'}
+                                                            </div>
+                                                        ) : (
+                                                            // Celdas normales - todas centradas
+                                                            <input
+                                                                type="text"
+                                                                value={cell}
+                                                                onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
+                                                                className="w-full px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50 bg-transparent text-center"
+                                                            />
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ExcelLoginApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
